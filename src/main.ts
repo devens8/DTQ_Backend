@@ -11,7 +11,7 @@ async function bootstrap() {
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
   app.enableCors({
-    origin: frontendUrl,
+    origin: [frontendUrl, 'https://downtheque.vercel.app', 'http://localhost:3000'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
