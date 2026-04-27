@@ -1,8 +1,8 @@
 # Dependencies
 node_modules/
 
-# Build output
-dist/
+# Build output — dist/ is built by Vercel via vercel-build script, don't commit it
+# dist/
 
 # Environment variables
 .env

@@ -1,14 +1,21 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import * as express from 'express';
 import { ValidationPipe } from '@nestjs/common';
-import { AppModule } from '../src/app.module';
+import { AppModule } from './app.module';
 
-let app: any;
+const server = express();
+let isInitialized = false;
 
-async function bootstrap() {
-  if (app) return app;
+export async function createApp(): Promise<express.Express> {
+  if (isInitialized) return server;
 
-  app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create(
+    AppModule,
+    new ExpressAdapter(server),
+    { rawBody: true, logger: ['error', 'warn'] },
+  );
 
   app.enableCors({
     origin: [
@@ -30,11 +37,6 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
   await app.init();
-  return app;
-}
-
-export default async function handler(req: any, res: any) {
-  const nestApp = await bootstrap();
-  const expressApp = nestApp.getHttpAdapter().getInstance();
-  return expressApp(req, res);
+  isInitialized = true;
+  return server;
 }

@@ -1,0 +1,47 @@
+import { OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
+export declare class RedisService implements OnModuleDestroy {
+    private config;
+    private readonly logger;
+    private client;
+    private subscriber;
+    private available;
+    constructor(config: ConfigService);
+    isAvailable(): boolean;
+    onModuleDestroy(): void;
+    getClient(): Redis | null;
+    getSubscriber(): Redis | null;
+    private safe;
+    get(key: string): Promise<string | null>;
+    set(key: string, value: string, ttl?: number): Promise<void>;
+    del(key: string): Promise<void>;
+    zadd(key: string, score: number, member: string): Promise<void>;
+    zrevrange(key: string, start: number, stop: number): Promise<string[]>;
+    zrevrangeWithScores(key: string, start: number, stop: number): Promise<{
+        member: string;
+        score: number;
+    }[]>;
+    zrem(key: string, member: string): Promise<void>;
+    zscore(key: string, member: string): Promise<number | null>;
+    zcard(key: string): Promise<number>;
+    incr(key: string): Promise<number>;
+    incrby(key: string, amount: number): Promise<number>;
+    decr(key: string): Promise<number>;
+    expire(key: string, ttl: number): Promise<void>;
+    ttl(key: string): Promise<number>;
+    sadd(key: string, ...members: string[]): Promise<void>;
+    sismember(key: string, member: string): Promise<boolean>;
+    smembers(key: string): Promise<string[]>;
+    srem(key: string, member: string): Promise<void>;
+    hset(key: string, field: string, value: string): Promise<void>;
+    hget(key: string, field: string): Promise<string | null>;
+    hgetall(key: string): Promise<Record<string, string> | null>;
+    hmset(key: string, data: Record<string, string>): Promise<void>;
+    hdel(key: string, field: string): Promise<void>;
+    publish(channel: string, message: string): Promise<void>;
+    subscribe(channel: string, handler: (message: string, channel: string) => void): Promise<void>;
+    psubscribe(pattern: string, handler: (message: string, channel: string) => void): Promise<void>;
+    keys(pattern: string): Promise<string[]>;
+    exists(key: string): Promise<boolean>;
+}
