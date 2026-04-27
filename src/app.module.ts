@@ -26,6 +26,7 @@ import { MixSuggestionsModule } from './mix-suggestions/mix-suggestions.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { SeedModule } from './seed/seed.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     AnalyticsModule,
     ModerationModule,
     SchedulerModule,
+    SeedModule,
   ],
 })
 export class AppModule {}
