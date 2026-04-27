@@ -146,42 +146,51 @@ export class RequestsService {
   }
 
   async getQueue(roomId: string, userId?: string): Promise<any[]> {
-    const ids = await this.redis.zrevrange(`room:${roomId}:queue`, 0, 49);
-    if (!ids.length) return [];
+    // Try Redis first for sorted order; fall back to DB query
+    const redisIds = await this.redis.zrevrange(`room:${roomId}:queue`, 0, 49);
 
-    const requests = await this.reqRepo.find({ where: { id: In(ids) }, relations: ["requester"] });
-    const requestMap = new Map(requests.map(r => [r.id, r]));
+    let requests: SongRequest[];
+    if (redisIds.length > 0) {
+      requests = await this.reqRepo.find({ where: { id: In(redisIds) }, relations: ['requester'] });
+    } else {
+      requests = await this.reqRepo.find({
+        where: { room: { id: roomId }, status: 'pending' },
+        relations: ['requester'],
+        order: { rankingScore: 'DESC', requestedAt: 'ASC' },
+        take: 50,
+      });
+    }
+
+    if (!requests.length) return [];
 
     const userVotes = userId
       ? await this.redis.smembers(`user:${userId}:votes:${roomId}`)
       : [];
     const voteSet = new Set(userVotes);
 
-    return ids
-      .map(id => {
-        const req = requestMap.get(id);
-        if (!req) return null;
-        return {
-          id: req.id,
-          trackId: req.trackId,
-          title: req.title,
-          artist: req.artist,
-          albumArtUrl: req.albumArtUrl,
-          durationMs: req.durationMs,
-          bpm: req.bpm,
-          genre: req.genre,
-          explicit: req.explicit,
-          voteCount: req.voteCount,
-          boostScore: req.boostScore,
-          status: req.status,
-          priorityTag: req.priorityTag,
-          rankingScore: req.rankingScore,
-          requesterName: req.requester?.displayName,
-          requestedAt: req.requestedAt,
-          userHasVoted: voteSet.has(req.id),
-        };
-      })
-      .filter(Boolean);
+    const orderedRequests = redisIds.length > 0
+      ? redisIds.map(id => requests.find(r => r.id === id)).filter(Boolean) as SongRequest[]
+      : requests;
+
+    return orderedRequests.map(req => ({
+      id: req.id,
+      trackId: req.trackId,
+      title: req.title,
+      artist: req.artist,
+      albumArtUrl: req.albumArtUrl,
+      durationMs: req.durationMs,
+      bpm: req.bpm,
+      genre: req.genre,
+      explicit: req.explicit,
+      voteCount: req.voteCount,
+      boostScore: req.boostScore,
+      status: req.status,
+      priorityTag: req.priorityTag,
+      rankingScore: req.rankingScore,
+      requesterName: req.requester?.displayName,
+      requestedAt: req.requestedAt,
+      userHasVoted: voteSet.has(req.id),
+    }));
   }
 
   async acceptRequest(requestId: string, djId: string): Promise<SongRequest> {

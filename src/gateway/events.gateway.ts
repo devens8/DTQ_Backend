@@ -10,12 +10,15 @@ import {
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import { createAdapter } from '@socket.io/redis-adapter';
 import { RedisService } from '../redis/redis.service';
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: [
+      process.env.FRONTEND_URL || 'http://localhost:3000',
+      'https://downtheque.vercel.app',
+      'http://localhost:3000',
+    ],
     credentials: true,
   },
   transports: ['websocket', 'polling'],
@@ -29,10 +32,19 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   constructor(private readonly redis: RedisService) {}
 
   afterInit(server: Server) {
-    const pubClient = this.redis.getClient();
-    const subClient = this.redis.getSubscriber();
-    server.adapter(createAdapter(pubClient, subClient));
-    this.logger.log('WebSocket gateway initialized with Redis adapter');
+    try {
+      const pubClient = this.redis.getClient();
+      const subClient = this.redis.getSubscriber();
+      if (pubClient && subClient && this.redis.isAvailable()) {
+        const { createAdapter } = require('@socket.io/redis-adapter');
+        server.adapter(createAdapter(pubClient, subClient));
+        this.logger.log('WebSocket gateway initialized with Redis adapter');
+      } else {
+        this.logger.log('WebSocket gateway initialized (in-memory adapter)');
+      }
+    } catch (e) {
+      this.logger.warn('WebSocket Redis adapter unavailable — using in-memory');
+    }
   }
 
   handleConnection(client: Socket) {
@@ -50,13 +62,8 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   ) {
     const { roomId, userId } = data;
     await client.join(`room:${roomId}`);
-
-    if (userId) {
-      await client.join(`user:${userId}`);
-    }
-
+    if (userId) await client.join(`user:${userId}`);
     client.emit('room_joined', { roomId, socketId: client.id });
-    this.logger.debug(`Socket ${client.id} joined room:${roomId}`);
   }
 
   @SubscribeMessage('dj_join')
@@ -88,29 +95,35 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     client.emit('heartbeat_ack', { ts: Date.now() });
   }
 
-  // ── Broadcast helpers called by services ──────────────────────────
+  // ── Broadcast helpers — all guard against uninitialized server ──
 
   broadcastQueueUpdate(roomId: string, queue: any[]) {
+    if (!this.server) return;
     this.server.to(`room:${roomId}`).emit('queue_update', { queue, version: Date.now() });
   }
 
   broadcastNowPlaying(roomId: string, track: any) {
+    if (!this.server) return;
     this.server.to(`room:${roomId}`).emit('now_playing', track);
   }
 
   broadcastToRoom(roomId: string, event: string, data: any) {
+    if (!this.server) return;
     this.server.to(`room:${roomId}`).emit(event, data);
   }
 
   broadcastToDJ(roomId: string, event: string, data: any) {
+    if (!this.server) return;
     this.server.to(`room:${roomId}:dj`).emit(event, data);
   }
 
   notifyUser(userId: string, event: string, data: any) {
+    if (!this.server) return;
     this.server.to(`user:${userId}`).emit(event, data);
   }
 
   broadcastRoomClosed(roomId: string) {
+    if (!this.server) return;
     this.server.to(`room:${roomId}`).emit('room_closed', { roomId });
   }
 }

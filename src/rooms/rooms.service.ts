@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Room } from '../entities/room.entity';
 import { User } from '../entities/user.entity';
+import { SongRequest } from '../entities/song-request.entity';
 import { RedisService } from '../redis/redis.service';
 import { EventsGateway } from '../gateway/events.gateway';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,6 +22,7 @@ export class RoomsService {
   constructor(
     @InjectRepository(Room) private roomRepo: Repository<Room>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(SongRequest) private reqRepo: Repository<SongRequest>,
     private redis: RedisService,
     private gateway: EventsGateway,
   ) {}
@@ -78,9 +80,45 @@ export class RoomsService {
         }
       : null;
 
-    const queueIds = await this.redis.zrevrange(`room:${room.id}:queue`, 0, 19);
+    // Get queue — Redis sorted order if available, else DB fallback
+    const redisIds = await this.redis.zrevrange(`room:${room.id}:queue`, 0, 49);
+    let queueRequests: SongRequest[];
+    if (redisIds.length > 0) {
+      queueRequests = await this.reqRepo.find({ where: { id: In(redisIds) }, relations: ['requester'] });
+      queueRequests.sort((a, b) => redisIds.indexOf(a.id) - redisIds.indexOf(b.id));
+    } else {
+      queueRequests = await this.reqRepo.find({
+        where: { room: { id: room.id }, status: 'pending' },
+        relations: ['requester'],
+        order: { rankingScore: 'DESC', requestedAt: 'ASC' },
+        take: 50,
+      });
+    }
 
-    let userState = { activeRequests: 0, cooldownEndsAt: null, canVote: true };
+    const userVotes = userId ? await this.redis.smembers(`user:${userId}:votes:${room.id}`) : [];
+    const voteSet = new Set(userVotes);
+
+    const queue = queueRequests.map(req => ({
+      id: req.id,
+      trackId: req.trackId,
+      title: req.title,
+      artist: req.artist,
+      albumArtUrl: req.albumArtUrl,
+      durationMs: req.durationMs,
+      bpm: req.bpm,
+      genre: req.genre,
+      explicit: req.explicit,
+      voteCount: req.voteCount,
+      boostScore: req.boostScore,
+      status: req.status,
+      priorityTag: req.priorityTag,
+      rankingScore: req.rankingScore,
+      requesterName: req.requester?.displayName,
+      requestedAt: req.requestedAt,
+      userHasVoted: voteSet.has(req.id),
+    }));
+
+    let userState = { activeRequests: 0, cooldownEndsAt: null as string | null, canVote: true };
     if (userId) {
       const activeCount = await this.redis.get(`user:${userId}:active_requests:${room.id}`);
       const cooldownTtl = await this.redis.ttl(`user:${userId}:cooldown:${room.id}`);
@@ -101,7 +139,7 @@ export class RoomsService {
         dj: room.dj ? { id: room.dj.id, displayName: room.dj.displayName } : null,
       },
       nowPlaying,
-      queueIds,
+      queue,
       userState,
     };
   }
